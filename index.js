@@ -1,5 +1,4 @@
-// 1. THE CRASH PATCH (Must be at the very top)
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
     if (reason?.message?.includes("reading 'all'")) return;
     console.error('Unhandled Rejection:', reason);
 });
@@ -8,18 +7,17 @@ const { Client } = require('discord.js-selfbot-v13');
 const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
 const client = new Client({ 
     checkUpdate: false,
-    patchVoice: true // Helps with voice stability
+    patchVoice: true 
 });
 const config = require('./config.json');
 
-// Using Railway Variables
 const TOKEN = process.env.TOKEN || config.Token;
 const GUILD_ID = process.env.GUILD || config.Guild;
-let CHANNEL_ID = process.env.CHANNEL || config.Channel; // Changed to let so it can update dynamically
+let CHANNEL_ID = process.env.CHANNEL || config.Channel;
 const OWNER_ID = process.env.OWNER_ID || config.OwnerID;
 
-let tempLeave = false; // Tracks if the bot is in a 1-minute timeout from 5raj
-let leaveTimeout = null; // Holds the active timeout object for 5raj
+let tempLeave = false;
+let leaveTimeout = null;
 
 client.on('ready', async () => {
     console.log(`Successfully logged in as: ${client.user.tag}`);
@@ -27,36 +25,43 @@ client.on('ready', async () => {
 });
 
 client.on('voiceStateUpdate', async (oldState, newState) => {
-    if (tempLeave) return; // Ignore updates if currently on 5raj cooldown
+    if (tempLeave) return;
     
-    // Only care if it's OUR account moving
     if (oldState.member.id !== client.user.id) return;
     
-    // If disconnected or moved to a different channel, join back
     if (!newState.channelId || newState.channelId !== CHANNEL_ID) {
         console.log("Detected voice state change. Rejoining target channel...");
-        setTimeout(() => joinVC(), 5000); // 5 second delay to prevent spamming
+        setTimeout(() => joinVC(), 5000);
     }
 });
 
-// Text Commands Listener
+async function sendAndDelete(channel, content) {
+    try {
+        const sentMessage = await channel.send(content);
+        setTimeout(async () => {
+            try {
+                await sentMessage.delete();
+            } catch (err) {}
+        }, 3000);
+    } catch (error) {
+        console.error("Failed to send or delete message:", error);
+    }
+}
+
 client.on('messageCreate', async (message) => {
-    // Only execute if the message is sent by YOU (the Owner)
     if (message.author.id !== OWNER_ID) return;
 
     const content = message.content.trim();
     const lowerContent = content.toLowerCase();
 
-    // 1. Conditional Leave Command (5raj)
     if (lowerContent === '5raj') {
         if (!message.guild) return;
 
         const ownerChannelId = message.member?.voice?.channelId;
         const botChannelId = message.guild.members.cache.get(client.user.id)?.voice?.channelId;
 
-        // Only leave if both you and this specific alt are in the exact same Voice Channel
         if (ownerChannelId && botChannelId && ownerChannelId === botChannelId) {
-            console.log(`Leaving VC for 1 minute by owner's command.`);
+            console.log("Leaving VC for 1 minute by owner's command.");
             tempLeave = true;
 
             const connection = getVoiceConnection(message.guild.id);
@@ -64,46 +69,37 @@ client.on('messageCreate', async (message) => {
                 connection.destroy();
             }
 
-            // Clear any old lingering timeout just in case
             if (leaveTimeout) clearTimeout(leaveTimeout);
 
-            // Stay out for exactly 1 minute (60,000 ms), then join back
             leaveTimeout = setTimeout(() => {
                 tempLeave = false;
-                console.log(`1 minute up. Rejoining target VC...`);
+                console.log("1 minute up. Rejoining target VC...");
                 joinVC();
             }, 60000);
         }
         return;
     }
 
-    // 2. Return / Move Commands (aji)
     if (lowerContent.startsWith('aji')) {
-        // Option A: Specific move command "aji @Alt targetChannelId"
         if (message.mentions.users.has(client.user.id)) {
-            // Find the last item in the message which should be the channel ID
             const args = content.split(/\s+/);
             const targetChannelId = args[args.length - 1];
 
-            // Verify it looks like a valid Snowflake ID (numbers only, usually 17-19 digits)
             if (/^\d+$/.test(targetChannelId)) {
-                console.log(`Targeted move requested. Updating target channel to: ${targetChannelId}`);
+                console.log("Targeted move requested. Updating target channel to:", targetChannelId);
                 
-                // Clear any active 5raj status so it moves immediately
                 tempLeave = false;
                 if (leaveTimeout) clearTimeout(leaveTimeout);
 
-                CHANNEL_ID = targetChannelId; // Permanently updates its target channel
+                CHANNEL_ID = targetChannelId;
                 joinVC();
                 return;
             }
         }
         
-        // Option B: Global plain "aji" command
-        // Instantly breaks the 1-minute 5raj lock and forces the alt back into its current target channel
         if (lowerContent === 'aji') {
             if (tempLeave) {
-                console.log(`"aji" received. Breaking 1-minute timeout early.`);
+                console.log("aji received. Breaking 1-minute timeout early.");
                 tempLeave = false;
                 if (leaveTimeout) clearTimeout(leaveTimeout);
                 joinVC();
@@ -112,60 +108,40 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // 3. Leaderboard Commands
-    if (lowerContent === 'lb chat') return message.channel.send('&lb chat');
-    if (lowerContent === 'lb vc') return message.channel.send('&lb voice');
-    if (lowerContent === 'lb net') return message.channel.send('&lb networth');
-    if (lowerContent === 'lb xp') return message.channel.send('&lb xp');
+    if (lowerContent === 'hidi') return sendAndDelete(message.channel, '.v hide');
+    if (lowerContent === 'unhide') return sendAndDelete(message.channel, '.v unhide');
+    if (lowerContent === 'sd') return sendAndDelete(message.channel, '.v lock');
+    if (lowerContent === '7l') return sendAndDelete(message.channel, '.v unlock');
+    if (lowerContent === 'd') return sendAndDelete(message.channel, 'd');
 
-    // 4. Simple Utilities
-    if (lowerContent === 'hidi') return message.channel.send('.v hide');
-    if (lowerContent === 'sd') return message.channel.send('.v lock');
-    if (lowerContent === '7l') return message.channel.send('.v unlock');
-
-    // 5. Role & Permission Management (With automatic Owner-ID Fallback)
     if (lowerContent === '7yd co' || lowerContent.startsWith('7yd co ')) {
         const target = content.substring(6).trim() || OWNER_ID;
-        return message.channel.send(`.v cowner remove ${target}`);
+        return sendAndDelete(message.channel, `.v cowner remove ${target}`);
     }
     if (lowerContent === 'perm' || lowerContent.startsWith('perm ')) {
         const target = content.substring(4).trim() || OWNER_ID;
-        return message.channel.send(`.v perm ${target}`);
+        return sendAndDelete(message.channel, `.v perm ${target}`);
     }
     if (lowerContent === 'reject' || lowerContent.startsWith('reject ')) {
         const target = content.substring(6).trim() || OWNER_ID;
-        return message.channel.send(`.v reject ${target}`);
+        return sendAndDelete(message.channel, `.v reject ${target}`);
+    }
+    if (lowerContent === 'rejecti zmar' || lowerContent.startsWith('rejecti zmar ')) {
+        const target = content.substring(13).trim() || OWNER_ID;
+        return sendAndDelete(message.channel, `.v reject ${target}`);
     }
     if (lowerContent === 'co' || lowerContent.startsWith('co ')) {
         const target = content.substring(2).trim() || OWNER_ID;
-        return message.channel.send(`.v cowner add ${target}`);
+        return sendAndDelete(message.channel, `.v cowner add ${target}`);
     }
-    
-    // 6. Letter Shortcut Commands
-    if (lowerContent === 'a' || lowerContent.startsWith('a ')) {
-        const target = content.substring(1).trim() || OWNER_ID;
-        return message.channel.send(`a ${target}`);
-    }
-    if (lowerContent === 'p' || lowerContent.startsWith('p ')) {
-        const target = content.substring(1).trim() || OWNER_ID;
-        return message.channel.send(`p ${target}`);
-    }
-    if (lowerContent === 'c' || lowerContent.startsWith('c ')) {
-        const target = content.substring(1).trim() || OWNER_ID;
-        return message.channel.send(`c ${target}`);
-    }
-    if (lowerContent === 'b' || lowerContent.startsWith('b ')) {
-        const target = content.substring(1).trim() || OWNER_ID;
-        return message.channel.send(`b ${target}`);
-    }
-    if (lowerContent === 'r' || lowerContent.startsWith('r ')) {
-        const target = content.substring(1).trim() || OWNER_ID;
-        return message.channel.send(`r ${target}`);
+    if (lowerContent === 'blacklisti had w9' || lowerContent.startsWith('blacklisti had w9 ')) {
+        const target = content.substring(17).trim() || OWNER_ID;
+        return sendAndDelete(message.channel, `.v bl ${target}`);
     }
 });
 
 function joinVC() {
-    if (tempLeave) return; // Prevent joining back if 5raj lockout is active
+    if (tempLeave) return;
 
     const guild = client.guilds.cache.get(GUILD_ID);
     if (!guild) return console.error("Error: Guild ID not found. Check your Railway Variables!");
@@ -187,11 +163,10 @@ function joinVC() {
     }
 }
 
-// Security Check & Login
 if (!TOKEN || TOKEN === "tokenhere" || TOKEN === "") {
     console.error("ERROR: No Token found in Railway Variables!");
 } else {
-    client.login(TOKEN).catch(err => {
+    client.login(TOKEN).catch(() => {
         console.error("Login Failed! Check if your Token is still valid.");
     });
 }
