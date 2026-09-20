@@ -7,12 +7,12 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js-selfbot-v13": "^3.4.4",
-    "@discordjs/voice": "^0.16.1",
-    "libsodium-wrappers": "^0.7.13",
-    "opusscript": "^0.0.8"
+    "@discordjs/voice": "^0.16.2",
+    "discord.js-selfbot-v13": "^3.7.1",
+    "libsodium-wrappers": "^0.7.15",
+    "opusscript": "^0.1.1"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.18.0"
   }
 }
